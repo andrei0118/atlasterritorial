@@ -59,8 +59,8 @@ def run_duckdb_query(query, file_path):
 # Carrega os conjuntos de dados. ATUALIZADO para os novos arquivos do TSE.
 pnad_renda_file = 'data/dados_pnad_renda.parquet'
 pnad_escolaridade_file = 'data/pnad_escolaridade_2023.parquet'
-tse_genero_file = 'data/eleitores_por_genero.parquet'  # Novo arquivo para gênero
-tse_idade_file = 'data/eleitores_por_faixa_etaria.parquet'  # Novo arquivo para idade
+tse_genero_file = 'data/eleitores_por_genero.parquet'
+tse_idade_file = 'data/eleitores_por_faixa_etaria.parquet'
 eleicoes_file = 'data/dados_votacao_candidato_munzona_2022_BR.parquet'
 
 # --- Widgets de Seleção no topo da página
@@ -86,8 +86,6 @@ if selecao_pagina == "Demografias":
         uf_param_tse = next(
             (key for key, value in UF_NAMES.items() if value == selecao_local), None)
         if uf_param_tse:
-            # Pega os municípios do arquivo Parquet usando DuckDB
-            # A consulta agora usa o novo arquivo de gênero, que contém a mesma coluna
             query = f"SELECT DISTINCT NM_MUNICIPIO FROM '{tse_genero_file}' WHERE SG_UF = '{uf_param_tse}' ORDER BY NM_MUNICIPIO;"
             municipios_df = run_duckdb_query(query, tse_genero_file)
             if not municipios_df.empty:
@@ -107,7 +105,7 @@ if selecao_local != "Brasil":
 
 # --- Exibe a página selecionada
 if selecao_pagina == "Demografias":
-    # --- Seção de Gênero (novo arquivo)
+    # --- Seção de Gênero
     if os.path.exists(tse_genero_file):
         query_sexo_base = f"SELECT * FROM '{tse_genero_file}'"
         where_clauses_sexo = []
@@ -138,7 +136,7 @@ if selecao_pagina == "Demografias":
         st.warning(
             "Não foi possível carregar os dados de gênero do TSE. Verifique o arquivo Parquet.")
 
-    # --- Seção de Faixa Etária (novo arquivo)
+    # --- Seção de Faixa Etária
     if os.path.exists(tse_idade_file):
         query_idade_base = f"SELECT * FROM '{tse_idade_file}'"
         where_clauses_idade = []
@@ -171,31 +169,38 @@ if selecao_pagina == "Demografias":
 
     st.markdown("---")
     st.subheader("Análise Socioeconômica da PNAD")
-    st.info("Os dados a seguir dependem apenas do Estado e da Região, e ignoram a seleção de Município.")
+    st.info("Os dados a seguir são por região e dependem apenas do Estado, ignorando a seleção de Município.")
 
+    # Mapeamento e lógica de seleção de região AJUSTADA para incluir "Todas as Regiões"
     regioes_map_simple_to_full = {
-        "Capital": "Capital",
-        "Região Metropolitana": "Resto da RM (Região Metropolitana, excluindo a capital)",
-        "RIDE": "Resto da RIDE (Região Integrada de Desenvolvimento Econômico, excluindo a capital)",
-        "Interior": "Resto da UF (Unidade da Federação, excluindo a região metropolitana e a RIDE)"
+        "Todas as Regiões": ["Capital", "Resto da RM (Região Metropolitana, excluindo a capital)", "Resto da RIDE (Região Integrada de Desenvolvimento Econômico, excluindo a capital)", "Resto da UF (Unidade da Federação, excluindo a região metropolitana e a RIDE)"],
+        "Capital": ["Capital"],
+        "Região Metropolitana": ["Resto da RM (Região Metropolitana, excluindo a capital)"],
+        "RIDE": ["Resto da RIDE (Região Integrada de Desenvolvimento Econômico, excluindo a capital)"],
+        "Interior": ["Resto da UF  (Unidade da Federação, excluindo a região metropolitana e a RIDE)"],
+
     }
 
+    # Adiciona "Todas as Regiões" como primeira opção
     regioes_disponiveis = list(regioes_map_simple_to_full.keys())
 
-    if selecao_local == "Brasil":
-        regioes_selecionadas_full_names = list(
-            regioes_map_simple_to_full.values())
-        st.text("Regiões selecionadas automaticamente para 'Brasil': Todas")
-        st.radio("Selecione a Região:", regioes_disponiveis,
-                 index=0, disabled=True)
-    else:
-        regiao_selecionada_simples = st.radio(
-            "Selecione a Região:",
-            regioes_disponiveis,
-            index=regioes_disponiveis.index("Capital")
-        )
-        regioes_selecionadas_full_names = [
-            regioes_map_simple_to_full[regiao_selecionada_simples]]
+    # Define a seleção padrão com base no local
+    # Se "Brasil" ou "Todos" os municípios, a opção padrão é "Todas as Regiões"
+    index_padrao = 0
+    if selecao_local != "Brasil" and selecao_municipio != "Todos":
+        # Se um estado e um município são selecionados, a seleção padrão é "Capital"
+        # Esta é uma suposição, pode ser ajustado conforme a necessidade
+        index_padrao = regioes_disponiveis.index(
+            "Capital") if "Capital" in regioes_disponiveis else 0
+
+    regiao_selecionada_simples = st.radio(
+        "Selecione a Região:",
+        regioes_disponiveis,
+        index=index_padrao,
+        key="regiao_pnad"
+    )
+
+    regioes_selecionadas_full_names = regioes_map_simple_to_full[regiao_selecionada_simples]
 
     if os.path.exists(pnad_renda_file) and os.path.exists(pnad_escolaridade_file):
         query_renda_base = f"SELECT * FROM '{pnad_renda_file}'"
@@ -337,4 +342,3 @@ elif selecao_pagina == "Eleições":
             "Não foi possível carregar os dados de votação. Verifique o arquivo Parquet.")
 
 st.markdown("---")
-st.markdown("Fonte: Dados do TSE e PNAD (Fontes de dados simuladas)")
